@@ -1,4 +1,3 @@
-import sqlite3
 import re, json, os, time, matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -32,8 +31,7 @@ scheduler = APScheduler()
 scheduler.init_app(app)
 scheduler.start()
 
-# 定義推播函數 (這裡需要填入你的 User ID)
-# 修改參數，加入 user_id
+
 def send_push_message(user_id, text):
     with ApiClient(configuration) as api_client:
         line_bot_api = MessagingApi(api_client)
@@ -46,12 +44,16 @@ def send_push_message(user_id, text):
 # --- 排程任務 ---
 # 9:00 到 21:00 每小時提醒喝水
 # 1. 喝水廣播 (簡單、不吃資料庫資源)
+# 1. 喝水廣播 (修正版)
 @scheduler.task('cron', id='water_reminder', hour='9-21', minute=0)
 def job_water():
-    conn = sqlite3.connect('health_bot.db')
+    # 改用我們剛寫好的 PostgreSQL 連線方式
+    from db_manager import get_db_connection
+    conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT DISTINCT user_id FROM users")
     all_users = [row[0] for row in cursor.fetchall()]
+    cursor.close()
     conn.close()
     
     for uid in all_users:
@@ -60,28 +62,31 @@ def job_water():
         except Exception as e:
             print(f"【DEBUG】: 推播失敗: {e}")
 
-# 2. 22:00 飲食總結 (客製化提醒)
+# 2. 晚上10點總結 (修正版)
 @scheduler.task('cron', id='night_reminder', hour=22, minute=0)
 def job_night():
+    from db_manager import get_db_connection
     # 1. 抓取所有用戶
-    conn = sqlite3.connect('health_bot.db')
+    conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT DISTINCT user_id FROM users")
     all_users = [row[0] for row in cursor.fetchall()]
+    cursor.close()
     conn.close()
 
     # 2. 對每位用戶進行個別推播
     for uid in all_users:
-        conn = sqlite3.connect('health_bot.db')
+        conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT food_name FROM food_logs WHERE user_id = ? AND date(date) = date('now', 'localtime')", (uid,))
+        # PostgreSQL 使用 CURRENT_DATE 或 date(date)
+        cursor.execute("SELECT food_name FROM food_logs WHERE user_id = %s AND date::date = CURRENT_DATE", (uid,))
         foods = [r[0] for r in cursor.fetchall()]
+        cursor.close()
         conn.close()
         
         food_summary = "、".join(foods) if foods else "尚未記錄"
         msg = f"💧 晚上10點了，喝杯水休息吧！\n\n📝 今日飲食清單：{food_summary}\n\n記得記錄體重，明天繼續努力！"
         
-        # 這裡直接呼叫通用函式，不需要再處理 APIClient 的細節
         send_push_message(uid, msg)
 def calculate_bmr(h, w, age, gender):
     # 預設性別為女，若為男則調整公式
@@ -175,13 +180,26 @@ def handle_message(event):
         send_reply(event.reply_token, fasting_reply)
         return
 
+    # --- 這裡加入體重快速紀錄 ---
+    if "體重是" in user_message or "我量體重" in user_message:
+        w_match = re.search(r"(\d+\.?\d*)", user_message)
+        if w_match:
+            weight = float(w_match.group(1))
+            add_weight_log(user_id, weight) # 確保這裡呼叫的是正確的 db_manager 函數
+            send_reply(event.reply_token, f"✅ 已成功記錄體重：{weight} kg！明天也要繼續加油喔！")
+            return
+
     if "今日紀錄" in user_message:
-        # 新增：撈取今天的清單並一起顯示
-        conn = sqlite3.connect('health_bot.db')
+        # --- 修正開始 ---
+        from db_manager import get_db_connection
+        conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT food_name FROM food_logs WHERE user_id = ? AND date(date) = date('now', 'localtime')", (user_id,))
+        # PostgreSQL 使用 CURRENT_DATE
+        cursor.execute("SELECT food_name FROM food_logs WHERE user_id = %s AND date::date = CURRENT_DATE", (user_id,))
         food_list = [row[0] for row in cursor.fetchall()]
+        cursor.close()
         conn.close()
+        # --- 修正結束 ---
         
         food_str = "、".join(food_list) if food_list else "尚未記錄任何食物"
         today_total = get_today_total_calories(user_id)
@@ -353,18 +371,18 @@ def handle_message(event):
             if cal > 0:
                 add_food_log(user_id, data.get('food_summary', '無'), cal)
             
-            # --- 【新增】：從資料庫讀取今日飲食清單 ---
-            import sqlite3
-            conn = sqlite3.connect('health_bot.db')
+            # --- 【修正】：使用 get_db_connection ---
+            from db_manager import get_db_connection
+            conn = get_db_connection()
             cursor = conn.cursor()
-            # 查詢該 user_id 今天的所有食物名稱
-            cursor.execute("SELECT food_name FROM food_logs WHERE user_id = ? AND date(date) = date('now', 'localtime')", (user_id,))
+            # PostgreSQL 使用 CURRENT_DATE
+            cursor.execute("SELECT food_name FROM food_logs WHERE user_id = %s AND date::date = CURRENT_DATE", (user_id,))
             food_list = [row[0] for row in cursor.fetchall()]
+            cursor.close()
             conn.close()
-            
-            food_str = "、".join(food_list) if food_list else "無"
             # ----------------------------------------
             
+            food_str = "、".join(food_list) if food_list else "無"
             today_total = get_today_total_calories(user_id)
 
             reply_text = (
