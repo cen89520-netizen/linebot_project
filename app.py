@@ -45,10 +45,17 @@ def send_push_message(user_id, text):
 # 1. 喝水廣播 (簡單、不吃資料庫資源)
 @scheduler.task('cron', id='water_reminder', hour='9-21', minute=0)
 def job_water():
-    with ApiClient(configuration) as api_client:
-        MessagingApi(api_client).broadcast(
-            messages=[TextMessage(text="💧 喝水時間到！多補充水分能提升代謝喔！")]
-        )
+    conn = sqlite3.connect('health_bot.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT DISTINCT user_id FROM users")
+    all_users = [row[0] for row in cursor.fetchall()]
+    conn.close()
+    
+    for uid in all_users:
+        try:
+            send_push_message(uid, "💧 喝水時間到！多補充水分能提升代謝喔！")
+        except Exception as e:
+            print(f"【DEBUG】: 推播失敗: {e}")
 
 # 2. 22:00 飲食總結 (客製化提醒)
 @scheduler.task('cron', id='night_reminder', hour=22, minute=0)
@@ -159,10 +166,9 @@ def handle_message(event):
     user_message = event.message.text.strip()
     user_id = event.source.user_id
     
-    # 優先嘗試處理斷食功能
+    # 1. 斷食指令優先
     fasting_reply = handle_fasting_logic(user_message, user_id)
     if fasting_reply:
-        # 如果有回覆，直接發送並結束，不會再觸發其他邏輯
         send_reply(event.reply_token, fasting_reply)
         return
 
@@ -296,7 +302,7 @@ def handle_message(event):
     elif "體重趨勢" in user_message:
         path = generate_weight_chart(user_id)
         if path:
-            chart_url = f"https://你的公開網址.com/{path}"
+            chart_url = f"https://linebot-project-df3w.onrender.com/{path}"
             with ApiClient(configuration) as api_client:
                 MessagingApi(api_client).reply_message(ReplyMessageRequest(
                     reply_token=event.reply_token,
