@@ -16,6 +16,9 @@ from db_manager import init_db, update_user_data, get_user_data, add_food_log, a
 
 load_dotenv()
 app = Flask(__name__)
+init_db()
+print("【DEBUG】: 資料庫表格初始化完成")
+
 if not os.getenv('CHANNEL_ACCESS_TOKEN') or not os.getenv('GEMINI_API_KEY'):
     print("【警告】: 環境變數設定缺失，請檢查 .env 檔案！")
 # =============================================================
@@ -395,5 +398,4 @@ def handle_message(event):
     else:
         print("【DEBUG】: reply_text 為空，未執行發送")
 if __name__ == "__main__":
-    init_db()
     app.run(host='0.0.0.0', port=5000)
