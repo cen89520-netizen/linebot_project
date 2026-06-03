@@ -282,43 +282,50 @@ def handle_message(event):
         reply_text = (
             "🥦 歡迎來到健康小學堂！請輸入以下指令查看詳細內容：\n\n"
             "【查詢指令】\n"
-            "🔎 營養-增肌\n"
-            "🔎 營養-減脂\n"
-            "🔎 營養-斷食\n"
-            "🔎 營養-外食\n"
-            "🔎 營養-運動"
+            "🔎 營養增肌\n🔎 營養減脂\n🔎 營養斷食\n🔎 營養外食\n🔎 營養運動"
         )
+        send_reply(event.reply_token, reply_text)
+        return
 
-    # 在 handle_message 裡面加入這些分支
-    elif "營養-增肌" in user_message:
+    elif "營養" in user_message and "增肌" in user_message:
         reply_text = ("💪 【增肌期蛋白質計算】\n"
                       "1. 蛋白質：體重 × 1.6~2.0倍 (克)。\n"
                       "2. 黃金比例：運動後碳水:蛋白質 = 3:1。\n"
                       "3. 脂肪：每天補充一把堅果，維持荷爾蒙運作。")
+        send_reply(event.reply_token, reply_text)
+        return
 
-    elif "營養-減脂" in user_message:
+    elif "營養" in user_message and "減脂" in user_message:
         reply_text = ("🔥 【減脂期營養重點】\n"
                       "1. 蛋白質：維持體重 × 1.2~1.5倍，防肌肉流失。\n"
                       "2. 聰明補油：避開炸物，選擇鮭魚、酪梨、堅果。\n"
                       "3. 油脂建議佔總熱量 20~30%。")
+        send_reply(event.reply_token, reply_text)
+        return
 
-    elif "營養-斷食" in user_message:
+    elif "營養" in user_message and "斷食" in user_message:
         reply_text = ("⏳ 【168斷食建議】\n"
                       "1. 進食窗口：先吃蛋白質與蔬菜，穩定血糖。\n"
                       "2. 斷食期間：只能喝水、黑咖啡、無糖茶。\n"
                       "3. 安全提醒：孕婦、發育中學生、糖尿病患者不建議斷食。")
+        send_reply(event.reply_token, reply_text)
+        return
 
-    elif "營養-外食" in user_message:
+    elif "營養" in user_message and "外食" in user_message:
         reply_text = ("🍱 【外食族拳頭法】\n"
                       "1. 蔬菜：每餐 1 個拳頭。\n"
                       "2. 蛋白質：每餐 1 個手掌心。\n"
                       "3. 主食：每餐 1 個拳頭 (多選非精緻澱粉)。")
+        send_reply(event.reply_token, reply_text)
+        return
 
-    elif "營養-運動" in user_message:
+    elif "營養" in user_message and "運動" in user_message:
         reply_text = ("🏃 【運動習慣建議】\n"
                       "1. 中強度(會喘但能說話)：每週 150 分鐘。\n"
                       "2. 高強度(很喘)：每週 75 分鐘。\n"
                       "3. 建議：重訓搭配有氧，堅持最重要！")
+        send_reply(event.reply_token, reply_text)
+        return
 
     elif "體重趨勢" in user_message:
         path = generate_weight_chart(user_id)
@@ -334,15 +341,27 @@ def handle_message(event):
 
     elif "幫助" in user_message:
         reply_text = (
-            "👋 歡迎使用健康管家！以下是您可以使用的指令：\n\n"
-            "1. 👤 **資料設定**：輸入身高、體重、年齡、目標等。\n"
-            "2. 🥗 **今日紀錄**：記錄飲食或運動，由 AI 為您分析熱量。\n"
-            "3. ⏳ **16/8 斷食功能**：使用「開始斷食」、「斷食狀態」、「結束斷食」進行計時。\n"
-            "4. 📊 **我的報表**：查看個人健康數據與目標達成率。\n"
-            "5. 📈 **體重趨勢**：查看體重變化圖表。\n"
-            "6. 💡 **營養知識**：獲取每日健康小撇步與營養觀念。\n\n"
-            "若有任何問題，隨時可以問我！"
+            "👋 歡迎使用健康管家！我是您的專屬營養健身教練。\n"
+            "不用擔心紀錄複雜，直接告訴我您的生活細節，我會幫您整理！\n\n"
+            "【📊 數據與紀錄】\n"
+            "• 初始化資料：「我的身高170，體重65，年齡25，我是女生，現在是減脂期」\n"
+            "• 快速記錄體重：「體重是 65.5」\n"
+            "• 查詢趨勢圖表：「體重趨勢」\n"
+            "• 查看健康評估：「我的報表」\n\n"
+            "【🥗 飲食與運動】\n"
+            "• 紀錄吃喝與運動：「午餐吃雞胸肉沙拉300大卡，跑步30分鐘」\n"
+            "• 查看今日總表：「今日紀錄」\n"
+            "• 斷食管理：「開始斷食」、「斷食狀態」、「結束斷食」\n\n"
+            "【💡 健康小百科】\n"
+            "• 查看分類：「營養知識」 (進入後輸入：營養-增肌、營養-減脂...)\n\n"
+            "🔔 **您的貼心秘書**：\n"
+            "1. 每日 21:30：我會提醒您記錄體重，保持數據連續性。\n"
+            "2. 每日 22:00：我會總結您今日的飲食與運動清單。\n"
+            "3. 斷食期間：開始斷食後，我會在 16 小時後主動提醒您開餐！\n\n"
+            "💡 小提示：若輸入格式有誤，請再完整敘述一次即可覆蓋更新資料喔！"
         )
+        send_reply(event.reply_token, reply_text)
+        return
 
     # 2. 如果不是上面的指令，就交給 AI 處理飲食/運動分析
     else:
