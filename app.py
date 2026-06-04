@@ -150,7 +150,10 @@ def handle_fasting_logic(user_message, user_id):
 @app.route('/static/<path:path>')
 def send_static(path):
     return send_from_directory('static', path)
-
+@app.route("/", methods=['GET', 'HEAD'])
+def health_check():
+    # 當有人訪問網址首頁時，直接回傳 OK，不需要任何簽名檢查
+    return "OK", 200
 @app.route("/callback", methods=['POST'])
 def callback():
     print("【DEBUG】: 收到來自 LINE 的 Webhook")
