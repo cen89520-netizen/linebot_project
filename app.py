@@ -210,44 +210,6 @@ def handle_message(event):
             f"📝 今日已紀錄：{food_str}\n"
             f"📊 今日累計熱量：{today_total} kcal"
         )
-    elif "資料設定" == user_message:
-        reply_text = (
-            "📏 請輸入您的個人資訊，例如：\n"
-            "「我的身高170，體重65，年齡25，我是女生，現在是減脂期」\n\n"
-            "您可以一次輸入多項設定，我會自動幫您更新！"
-        )
-
-    # 執行資料更新 (當輸入包含設定關鍵字時)
-    elif any(k in user_message for k in ["身高", "體重", "年齡", "性別", "增肌期", "減脂期", "維持期", "目標熱量", "熱量設定"]):
-        h_match = re.search(r"身高.*?(\d+\.?\d*)", user_message)
-        w_match = re.search(r"體重.*?(\d+\.?\d*)", user_message)
-        a_match = re.search(r"年齡.*?(\d+)", user_message)
-        g_match = re.search(r"(男|女)生?", user_message)
-        p_match = re.search(r"(增肌期|減脂期|維持期)", user_message)
-        c_match = re.search(r"(目標熱量|熱量設定|每日目標).*?(\d+)", user_message)
-        update_fields = {}
-        if h_match: update_fields['height'] = float(h_match.group(1))
-        if w_match: update_fields['weight'] = float(w_match.group(1))
-        if a_match: 
-            age = int(a_match.group(1))
-            if 0 < age < 120: update_fields['age'] = age
-        if g_match: update_fields['gender'] = '男' if '男' in g_match.group(1) else '女'
-        if p_match: update_fields['phase'] = p_match.group(1)
-        if c_match: update_fields['goal_calories'] = float(c_match.group(2))
-
-        if update_fields:
-            update_user_data(user_id, **update_fields)
-            
-            lines = ["✅ 資料已更新："]
-            if 'height' in update_fields: lines.append(f"📏 身高: {update_fields['height']} cm")
-            if 'weight' in update_fields: lines.append(f"⚖️ 體重: {update_fields['weight']} kg")
-            if 'age' in update_fields: lines.append(f"🎂 年齡: {update_fields['age']} 歲")
-            if 'gender' in update_fields: lines.append(f"🚻 性別: {update_fields['gender']}")
-            if 'phase' in update_fields: lines.append(f"🔄 當前目標: {update_fields['phase']}")
-            if 'goal_calories' in update_fields: lines.append(f"🎯 目標熱量: {update_fields['goal_calories']} kcal")
-            reply_text = "\n".join(lines)
-        else:
-            reply_text = "格式有誤，請參考範例：我的身高170，體重64，年齡19，我是女生，現在是增肌期"
     elif "我的報表" in user_message:
         data = get_user_data(user_id)
         if data:
@@ -338,7 +300,44 @@ def handle_message(event):
                 ))
             return 
         reply_text = "📈 體重紀錄不足，請多記錄幾次體重喔！"
+    elif "資料設定" == user_message:
+        reply_text = (
+            "📏 請輸入您的個人資訊，例如：\n"
+            "「我的身高170，體重65，年齡25，我是女生，現在是減脂期」\n\n"
+            "您可以一次輸入多項設定，我會自動幫您更新！"
+        )
 
+    # 執行資料更新 (當輸入包含設定關鍵字時)
+    elif any(k in user_message for k in ["身高", "體重", "年齡", "性別", "增肌期", "減脂期", "維持期", "目標熱量", "熱量設定"]):
+        h_match = re.search(r"身高.*?(\d+\.?\d*)", user_message)
+        w_match = re.search(r"體重.*?(\d+\.?\d*)", user_message)
+        a_match = re.search(r"年齡.*?(\d+)", user_message)
+        g_match = re.search(r"(男|女)生?", user_message)
+        p_match = re.search(r"(增肌期|減脂期|維持期)", user_message)
+        c_match = re.search(r"(目標熱量|熱量設定|每日目標).*?(\d+)", user_message)
+        update_fields = {}
+        if h_match: update_fields['height'] = float(h_match.group(1))
+        if w_match: update_fields['weight'] = float(w_match.group(1))
+        if a_match: 
+            age = int(a_match.group(1))
+            if 0 < age < 120: update_fields['age'] = age
+        if g_match: update_fields['gender'] = '男' if '男' in g_match.group(1) else '女'
+        if p_match: update_fields['phase'] = p_match.group(1)
+        if c_match: update_fields['goal_calories'] = float(c_match.group(2))
+
+        if update_fields:
+            update_user_data(user_id, **update_fields)
+            
+            lines = ["✅ 資料已更新："]
+            if 'height' in update_fields: lines.append(f"📏 身高: {update_fields['height']} cm")
+            if 'weight' in update_fields: lines.append(f"⚖️ 體重: {update_fields['weight']} kg")
+            if 'age' in update_fields: lines.append(f"🎂 年齡: {update_fields['age']} 歲")
+            if 'gender' in update_fields: lines.append(f"🚻 性別: {update_fields['gender']}")
+            if 'phase' in update_fields: lines.append(f"🔄 當前目標: {update_fields['phase']}")
+            if 'goal_calories' in update_fields: lines.append(f"🎯 目標熱量: {update_fields['goal_calories']} kcal")
+            reply_text = "\n".join(lines)
+        else:
+            reply_text = "格式有誤，請參考範例：我的身高170，體重64，年齡19，我是女生，現在是增肌期"
     elif "幫助" in user_message:
         reply_text = (
             "👋 歡迎使用健康管家！我是您的專屬營養健身教練。\n"
