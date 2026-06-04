@@ -218,7 +218,7 @@ def handle_message(event):
         )
 
     # 執行資料更新 (當輸入包含設定關鍵字時)
-    elif any(k in user_message for k in ["身高", "體重", "年齡", "性別", "增肌", "減脂", "維持", "目標熱量", "熱量設定"]):
+    elif any(k in user_message for k in ["身高", "體重", "年齡", "性別", "增肌期", "減脂期", "維持期", "目標熱量", "熱量設定"]):
         h_match = re.search(r"身高.*?(\d+\.?\d*)", user_message)
         w_match = re.search(r"體重.*?(\d+\.?\d*)", user_message)
         a_match = re.search(r"年齡.*?(\d+)", user_message)
