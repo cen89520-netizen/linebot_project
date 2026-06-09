@@ -11,6 +11,7 @@ from linebot.v3.webhooks import MessageEvent, TextMessageContent, ImageMessageCo
 from google import genai
 from google.genai import types
 import io
+from PIL import Image
 import cloudinary
 import cloudinary.uploader
 cloudinary.config(
@@ -766,7 +767,11 @@ def handle_image_message(event):
         # 從 LINE 下載圖片
         with ApiClient(configuration) as api_client:
             blob_api = MessagingApiBlob(api_client)
-            image_bytes = blob_api.get_message_content(message_id)
+            raw = blob_api.get_message_content(message_id)
+            # 相容 bytes 和 iterable chunks 兩種回傳格式
+            image_bytes = raw if isinstance(raw, bytes) else b''.join(raw)
+
+        img = Image.open(io.BytesIO(image_bytes))
 
         prompt = """
         你是一位專業營養師，請分析這張食物照片。
@@ -781,10 +786,7 @@ def handle_image_message(event):
 
         response = ai_client.models.generate_content(
             model='models/gemini-3.5-flash',
-            contents=[
-                types.Part.from_bytes(data=image_bytes, mime_type='image/jpeg'),
-                types.Part.from_text(prompt)
-            ]
+            contents=[img, prompt]
         )
 
         raw = response.text.replace('```json', '').replace('```', '').strip()
