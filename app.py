@@ -13,7 +13,7 @@ from google.genai import types
 from dotenv import load_dotenv
 from flask_apscheduler import APScheduler
 from linebot.v3.messaging import PushMessageRequest
-from db_manager import init_db, update_user_data, get_user_data, add_food_log, add_weight_log, add_exercise_log, get_weight_history, get_today_total_calories
+from db_manager import init_db, update_user_data, get_user_data, add_food_log, add_weight_log, add_exercise_log, get_weight_history, get_today_total_calories, get_streak
 
 load_dotenv()
 app = Flask(__name__)
@@ -90,6 +90,85 @@ def job_night():
         msg = f"💧 晚上10點了，喝杯水休息吧！\n\n📝 今日飲食清單：{food_summary}\n\n記得記錄體重，明天繼續努力！"
         
         send_push_message(uid, msg)
+
+# 3. 每週一早上 9 點（UTC 1:00）發送週報
+@scheduler.task('cron', id='weekly_report', day_of_week='mon', hour=1, minute=0)
+def job_weekly_report():
+    from db_manager import get_db_connection
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT DISTINCT user_id FROM users")
+    all_users = [row[0] for row in cursor.fetchall()]
+    cursor.close()
+    conn.close()
+
+    for uid in all_users:
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT SUM(calories), COUNT(DISTINCT date::date)
+                FROM food_logs
+                WHERE user_id = %s AND date::date BETWEEN CURRENT_DATE - 7 AND CURRENT_DATE - 1
+            """, (uid,))
+            food_row = cursor.fetchone()
+            total_cal = food_row[0] or 0
+            log_days = food_row[1] or 0
+
+            cursor.execute("""
+                SELECT COUNT(*), COALESCE(SUM(calories_burned), 0)
+                FROM exercise_logs
+                WHERE user_id = %s AND date::date BETWEEN CURRENT_DATE - 7 AND CURRENT_DATE - 1
+            """, (uid,))
+            ex_row = cursor.fetchone()
+            ex_count = ex_row[0] or 0
+            ex_cal = ex_row[1] or 0
+
+            cursor.execute("""
+                SELECT weight FROM weight_logs WHERE user_id = %s
+                AND date::date BETWEEN CURRENT_DATE - 7 AND CURRENT_DATE - 1
+                ORDER BY date ASC LIMIT 1
+            """, (uid,))
+            first_w = cursor.fetchone()
+            cursor.execute("""
+                SELECT weight FROM weight_logs WHERE user_id = %s
+                AND date::date BETWEEN CURRENT_DATE - 7 AND CURRENT_DATE - 1
+                ORDER BY date DESC LIMIT 1
+            """, (uid,))
+            last_w = cursor.fetchone()
+            cursor.close()
+            conn.close()
+
+            avg_cal = int(total_cal / 7) if total_cal else 0
+
+            if log_days >= 6:
+                performance = "🌟 記錄非常完整，超棒！"
+            elif log_days >= 4:
+                performance = "👍 不錯！這週試著每天都記錄看看！"
+            else:
+                performance = "💪 繼續加油，多記錄讓數據幫助你！"
+
+            weight_line = ""
+            if first_w and last_w and first_w[0] != last_w[0]:
+                diff = last_w[0] - first_w[0]
+                arrow = "↓" if diff < 0 else "↑"
+                weight_line = f"\n⚖️ 體重變化：{arrow} {abs(diff):.1f} kg"
+
+            msg = (
+                f"📊 上週健康週報\n"
+                f"{'─' * 18}\n"
+                f"📅 記錄天數：{log_days} / 7 天\n"
+                f"🔥 平均每日攝取：{avg_cal} kcal\n"
+                f"🏃 運動次數：{ex_count} 次\n"
+                f"💪 運動消耗：{ex_cal} kcal"
+                f"{weight_line}\n"
+                f"{'─' * 18}\n"
+                f"{performance}"
+            )
+            send_push_message(uid, msg)
+        except Exception as e:
+            print(f"【DEBUG】: 週報推播失敗 {uid}: {e}")
+
 def calculate_bmr(h, w, age, gender):
     # 預設性別為女，若為男則調整公式
     if gender == '男':
@@ -113,7 +192,18 @@ def send_flex_reply(reply_token, alt_text, bubble_dict):
             messages=[FlexMessage(alt_text=alt_text, contents=FlexContainer.from_dict(bubble_dict))]
         ))
 
-def build_log_bubble(food_summary, cal, ex_summary, ex_cal, today_total, food_str, ex_str, advice, food_breakdown=''):
+def build_log_bubble(food_summary, cal, ex_summary, ex_cal, today_total, food_str, ex_str, advice, food_breakdown='', streak=0):
+    if streak >= 14:
+        streak_badge = f"　🏆 連續 {streak} 天"
+    elif streak >= 7:
+        streak_badge = f"　🔥🔥 連續 {streak} 天"
+    elif streak >= 3:
+        streak_badge = f"　🔥 連續 {streak} 天"
+    elif streak >= 1:
+        streak_badge = f"　🌱 第 {streak} 天"
+    else:
+        streak_badge = ""
+
     body = []
     if cal > 0:
         body += [
@@ -149,7 +239,7 @@ def build_log_bubble(food_summary, cal, ex_summary, ex_cal, today_total, food_st
     return {
         "type": "bubble",
         "header": {"type": "box", "layout": "vertical", "backgroundColor": "#4A90D9", "paddingAll": "15px",
-                   "contents": [{"type": "text", "text": "✅ 記錄成功", "color": "#ffffff", "weight": "bold", "size": "lg"}]},
+                   "contents": [{"type": "text", "text": f"✅ 記錄成功{streak_badge}", "color": "#ffffff", "weight": "bold", "size": "lg", "wrap": True}]},
         "body": {"type": "box", "layout": "vertical", "paddingAll": "15px", "contents": body},
         "footer": {"type": "box", "layout": "vertical", "backgroundColor": "#f8f9fa", "paddingAll": "12px",
                    "contents": [{"type": "text", "text": f"💡 {advice}", "wrap": True, "color": "#888888", "size": "xs"}]}
@@ -574,11 +664,13 @@ def handle_message(event):
             ex_str = "、".join(ex_list) if ex_list else "無"
             today_total = get_today_total_calories(user_id)
 
+            streak = get_streak(user_id)
             send_flex_reply(event.reply_token, "記錄成功",
                             build_log_bubble(food_summary, cal, ex_summary, ex_cal,
                                              today_total, food_str, ex_str,
                                              data.get('advice', '維持健康生活！'),
-                                             data.get('food_breakdown', '')))
+                                             data.get('food_breakdown', ''),
+                                             streak))
             return
         except Exception as e:
             error_msg = str(e)

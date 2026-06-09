@@ -132,6 +132,33 @@ def get_weight_history(user_id):
     conn.close()
     return data
 
+def get_streak(user_id):
+    from datetime import date, timedelta
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT DISTINCT date::date AS log_date
+        FROM food_logs WHERE user_id = %s
+        ORDER BY log_date DESC
+    """, (user_id,))
+    dates = [row[0] for row in cur.fetchall()]
+    cur.close()
+    conn.close()
+
+    if not dates:
+        return 0
+    today = date.today()
+    if dates[0] < today - timedelta(days=1):
+        return 0
+    streak, expected = 0, dates[0]
+    for d in dates:
+        if d == expected:
+            streak += 1
+            expected -= timedelta(days=1)
+        else:
+            break
+    return streak
+
 def get_today_total_calories(user_id):
     conn = get_db_connection()
     cur = conn.cursor()
