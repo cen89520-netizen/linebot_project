@@ -6,7 +6,7 @@ from datetime import datetime
 from flask import Flask, request, abort, send_from_directory
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
-from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, MessagingApiBlob, ReplyMessageRequest, TextMessage, ImageMessage, FlexMessage, FlexContainer
+from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, MessagingApiBlob, ReplyMessageRequest, TextMessage, ImageMessage, FlexMessage, FlexContainer, QuickReply, QuickReplyItem, MessageAction
 from linebot.v3.webhooks import MessageEvent, TextMessageContent, ImageMessageContent
 from google import genai
 from google.genai import types
@@ -573,28 +573,76 @@ def handle_message(event):
             reply_text = "\n".join(lines)
         else:
             reply_text = "格式有誤，請參考範例：我的身高170，體重64，年齡19，我是女生，現在是增肌期"
+    elif user_message == "幫助-數據":
+        send_reply(event.reply_token,
+            "📊 數據與紀錄\n"
+            "─────────────\n"
+            "• 設定資料：「身高170，體重65，年齡25，女生，減脂期」\n"
+            "• 記錄體重：「體重是 65.5」\n"
+            "• 體重趨勢圖：「體重趨勢」（需 3 筆以上）\n"
+            "• 健康報表（BMI、目標熱量）：「我的報表」\n"
+            "• 今日飲食運動總覽：「今日紀錄」")
+        return
+
+    elif user_message == "幫助-飲食":
+        send_reply(event.reply_token,
+            "🥗 飲食與運動記錄\n"
+            "─────────────\n"
+            "• 文字記錄：直接說「午餐雞腿飯，跑步 30 分鐘」\n"
+            "• 拍照記錄：傳送食物照片，AI 自動辨識熱量\n"
+            "• 記錄後顯示本次熱量、今日累計、逐項明細\n"
+            "• 連續記錄天數：🌱 第 1 天 → 🔥 3 天 → 🏆 14 天")
+        return
+
+    elif user_message == "幫助-斷食":
+        send_reply(event.reply_token,
+            "⏳ 斷食功能\n"
+            "─────────────\n"
+            "• 開始計時：「開始斷食」\n"
+            "• 查看進度：「斷食狀態」\n"
+            "• 結束計時：「結束斷食」\n"
+            "• 達成 16 小時會特別告知，未達標也會鼓勵你")
+        return
+
+    elif user_message == "幫助-知識":
+        send_reply(event.reply_token,
+            "💡 營養知識\n"
+            "─────────────\n"
+            "輸入以下關鍵字查看詳細說明：\n"
+            "• 營養增肌\n"
+            "• 營養減脂\n"
+            "• 營養斷食\n"
+            "• 營養外食\n"
+            "• 營養運動")
+        return
+
+    elif user_message == "幫助-提醒":
+        send_reply(event.reply_token,
+            "🔔 自動提醒\n"
+            "─────────────\n"
+            "每天固定推播：\n"
+            "• 每 3 小時（9am / 12pm / 3pm / 6pm / 9pm）：喝水提醒\n"
+            "• 每晚 10 點：今日飲食清單總結\n\n"
+            "每週：\n"
+            "• 週一早上 9 點：上週健康週報\n"
+            "  （記錄天數、平均熱量、運動次數、體重變化）")
+        return
+
     elif "幫助" in user_message:
-        reply_text = (
-            "👋 歡迎使用健康管家！我是您的專屬營養健身教練。\n"
-            "不用擔心紀錄複雜，直接告訴我您的生活細節，我會幫您整理！\n\n"
-            "【📊 數據與紀錄】\n"
-            "• 初始化資料：「我的身高170，體重65，年齡25，我是女生，現在是減脂期」\n"
-            "• 快速記錄體重：「體重是 65.5」\n"
-            "• 查詢趨勢圖表：「體重趨勢」\n"
-            "• 查看健康評估：「我的報表」\n\n"
-            "【🥗 飲食與運動】\n"
-            "• 紀錄吃喝與運動：「午餐吃雞胸肉沙拉300大卡，跑步30分鐘」\n"
-            "• 查看今日總表：「今日紀錄」\n"
-            "• 斷食管理：「開始斷食」、「斷食狀態」、「結束斷食」\n\n"
-            "【💡 健康小百科】\n"
-            "• 查看分類：「營養知識」 (進入後輸入：營養-增肌、營養-減脂...)\n\n"
-            "🔔 **您的貼心秘書**：\n"
-            "1. 每日 21:30：我會提醒您記錄體重，保持數據連續性。\n"
-            "2. 每日 22:00：我會總結您今日的飲食與運動清單。\n"
-            "3. 斷食期間：開始斷食後，我會在 16 小時後主動提醒您開餐！\n\n"
-            "💡 小提示：若輸入格式有誤，請再完整敘述一次即可覆蓋更新資料喔！"
-        )
-        send_reply(event.reply_token, reply_text)
+        with ApiClient(configuration) as api_client:
+            MessagingApi(api_client).reply_message(ReplyMessageRequest(
+                reply_token=event.reply_token,
+                messages=[TextMessage(
+                    text="👋 我是你的健康管家！\n直接說出飲食、運動或體重，我幫你記錄 📋\n\n想了解哪個功能？",
+                    quick_reply=QuickReply(items=[
+                        QuickReplyItem(action=MessageAction(label="📊 數據與紀錄", text="幫助-數據")),
+                        QuickReplyItem(action=MessageAction(label="🥗 飲食與運動", text="幫助-飲食")),
+                        QuickReplyItem(action=MessageAction(label="⏳ 斷食功能", text="幫助-斷食")),
+                        QuickReplyItem(action=MessageAction(label="💡 營養知識", text="幫助-知識")),
+                        QuickReplyItem(action=MessageAction(label="🔔 自動提醒", text="幫助-提醒")),
+                    ])
+                )]
+            ))
         return
 
     # 2. 如果不是上面的指令，就交給 AI 處理飲食/運動分析
