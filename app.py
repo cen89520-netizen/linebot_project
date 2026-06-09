@@ -1,13 +1,15 @@
 import re, json, os, time, matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 from datetime import datetime
 from flask import Flask, request, abort, send_from_directory
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
-from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, ReplyMessageRequest, TextMessage, ImageMessage
-from linebot.v3.webhooks import MessageEvent, TextMessageContent
+from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, MessagingApiBlob, ReplyMessageRequest, TextMessage, ImageMessage
+from linebot.v3.webhooks import MessageEvent, TextMessageContent, ImageMessageContent
 from google import genai
+from google.genai import types
 from dotenv import load_dotenv
 from flask_apscheduler import APScheduler
 from linebot.v3.messaging import PushMessageRequest
@@ -106,15 +108,64 @@ def send_reply(reply_token, text):
 
 def generate_weight_chart(user_id):
     history = get_weight_history(user_id)
-    if not history or len(history) < 2: return None
-    weights, dates = [h[0] for h in history], [datetime.strptime(h[1], '%Y-%m-%d %H:%M:%S') for h in history]
-    plt.figure(figsize=(8, 4))
-    plt.plot(dates, weights, marker='o', linestyle='-', color='b')
-    plt.title("Weight Trend")
-    plt.grid(True)
-    if not os.path.exists('static'): os.makedirs('static')
+    if not history or len(history) < 3:
+        return None
+
+    weights = [h[0] for h in history]
+    dates = [h[1] if isinstance(h[1], datetime) else datetime.strptime(str(h[1]), '%Y-%m-%d %H:%M:%S') for h in history]
+
+    change = weights[-1] - weights[0]
+    change_str = f"+{change:.1f}" if change >= 0 else f"{change:.1f}"
+    min_w, max_w = min(weights), max(weights)
+
+    fig, ax = plt.subplots(figsize=(9, 5))
+    fig.patch.set_facecolor('#f8f9fa')
+    ax.set_facecolor('#f8f9fa')
+
+    ax.plot(dates, weights, marker='o', linestyle='-', color='#4a90d9',
+            linewidth=2.5, markersize=7, zorder=3)
+    ax.fill_between(dates, weights, min_w - 1, alpha=0.15, color='#4a90d9')
+
+    # 標出最低點
+    min_idx = weights.index(min_w)
+    ax.annotate(f'{min_w} kg', xy=(dates[min_idx], min_w),
+                xytext=(0, -18), textcoords='offset points',
+                ha='center', fontsize=9, color='#27ae60', fontweight='bold')
+
+    # 標出最高點（與最低點不同位置時才標）
+    max_idx = weights.index(max_w)
+    if max_idx != min_idx:
+        ax.annotate(f'{max_w} kg', xy=(dates[max_idx], max_w),
+                    xytext=(0, 10), textcoords='offset points',
+                    ha='center', fontsize=9, color='#e74c3c', fontweight='bold')
+
+    # 標出最新體重（紅點）
+    ax.plot(dates[-1], weights[-1], marker='o', color='#e74c3c', markersize=11, zorder=4)
+    ax.annotate(f'Latest: {weights[-1]} kg', xy=(dates[-1], weights[-1]),
+                xytext=(-10, 12), textcoords='offset points',
+                ha='right', fontsize=10, color='#e74c3c', fontweight='bold')
+
+    padding = max((max_w - min_w) * 0.4, 1.5)
+    ax.set_ylim(min_w - padding, max_w + padding)
+
+    ax.set_title(f'Weight Trend  ({change_str} kg)', fontsize=14,
+                 fontweight='bold', color='#333333', pad=15)
+    ax.set_ylabel('Weight (kg)', fontsize=11, color='#555555')
+    ax.set_xlabel('Date', fontsize=11, color='#555555')
+
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d'))
+    plt.xticks(rotation=30, ha='right', fontsize=9)
+
+    ax.grid(True, linestyle='--', alpha=0.5, color='#cccccc')
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+
+    plt.tight_layout()
+
+    if not os.path.exists('static'):
+        os.makedirs('static')
     filename = f"static/chart_{user_id}.png"
-    plt.savefig(filename)
+    plt.savefig(filename, dpi=150, bbox_inches='tight')
     plt.close()
     return filename
 
@@ -295,14 +346,14 @@ def handle_message(event):
     elif "體重趨勢" in user_message:
         path = generate_weight_chart(user_id)
         if path:
-            chart_url = f"https://linebot-project-df3w.onrender.com/{path}"
+            chart_url = f"{os.getenv('BASE_URL', '').rstrip('/')}/{path}"
             with ApiClient(configuration) as api_client:
                 MessagingApi(api_client).reply_message(ReplyMessageRequest(
                     reply_token=event.reply_token,
                     messages=[TextMessage(text="📈 這是您的體重變化趨勢："), ImageMessage(originalContentUrl=chart_url, previewImageUrl=chart_url)]
                 ))
             return 
-        reply_text = "📈 體重紀錄不足，請多記錄幾次體重喔！"
+        reply_text = "📈 體重紀錄不足，請至少記錄 3 次體重後再查看趨勢圖喔！"
     elif "資料設定" == user_message:
         reply_text = (
             "📏 請輸入您的個人資訊，例如：\n"
@@ -330,7 +381,9 @@ def handle_message(event):
 
         if update_fields:
             update_user_data(user_id, **update_fields)
-            
+            if 'weight' in update_fields:
+                add_weight_log(user_id, update_fields['weight'])
+
             lines = ["✅ 資料已更新："]
             if 'height' in update_fields: lines.append(f"📏 身高: {update_fields['height']} cm")
             if 'weight' in update_fields: lines.append(f"⚖️ 體重: {update_fields['weight']} kg")
@@ -383,36 +436,47 @@ def handle_message(event):
         
         try:
             # 只執行一次，不使用迴圈
-            response = ai_client.models.generate_content(model='models/gemini-3.5-flash', contents=prompt)
+            response = ai_client.models.generate_content(model='gemini-2.0-flash', contents=prompt)
             raw = response.text.replace('```json', '').replace('```', '').strip()
             start, end = raw.find('{'), raw.rfind('}') + 1
             data = json.loads(raw[start:end])
             
             cal = int(data.get('total_calories', 0))
+            ex_cal = int(data.get('exercise_calories', 0))
+            food_summary = data.get('food_summary', '無')
+            ex_summary = data.get('exercise_summary', '無')
+
             if cal > 0:
-                add_food_log(user_id, data.get('food_summary', '無'), cal)
-            
-            # --- 【修正】：使用 get_db_connection ---
+                add_food_log(user_id, food_summary, cal)
+            if ex_cal > 0 and ex_summary != '無':
+                add_exercise_log(user_id, ex_summary, ex_cal)
+
             from db_manager import get_db_connection
             conn = get_db_connection()
             cursor = conn.cursor()
-            # PostgreSQL 使用 CURRENT_DATE
             cursor.execute("SELECT food_name FROM food_logs WHERE user_id = %s AND date::date = CURRENT_DATE", (user_id,))
             food_list = [row[0] for row in cursor.fetchall()]
+            cursor.execute("SELECT exercise_name FROM exercise_logs WHERE user_id = %s AND date::date = CURRENT_DATE", (user_id,))
+            ex_list = [row[0] for row in cursor.fetchall()]
             cursor.close()
             conn.close()
-            # ----------------------------------------
-            
+
             food_str = "、".join(food_list) if food_list else "無"
+            ex_str = "、".join(ex_list) if ex_list else "無"
             today_total = get_today_total_calories(user_id)
 
-            reply_text = (
-                f"收到！幫您記錄：{data.get('food_summary', '無')}\n\n"
-                f"🔥 本次熱量：{cal} kcal\n"
-                f"📊 今日累計攝取：{today_total} kcal\n"
-                f"📝 今日飲食清單：{food_str}\n\n"
-                f"💡 營養師小叮嚀：{data.get('advice', '維持健康生活！')}"
-            )
+            lines = ["收到！已幫您記錄 📋\n"]
+            if cal > 0:
+                lines.append(f"🍽️ 飲食：{food_summary}")
+                lines.append(f"🔥 本次攝取：{cal} kcal")
+            if ex_cal > 0 and ex_summary != '無':
+                lines.append(f"🏃 運動：{ex_summary}")
+                lines.append(f"💪 本次消耗：{ex_cal} kcal")
+            lines.append(f"\n📊 今日累計攝取：{today_total} kcal")
+            lines.append(f"📝 今日飲食：{food_str}")
+            lines.append(f"🏋️ 今日運動：{ex_str}")
+            lines.append(f"\n💡 {data.get('advice', '維持健康生活！')}")
+            reply_text = "\n".join(lines)
         except Exception as e:
             error_msg = str(e)
             print(f"【DEBUG】: 錯誤詳細內容: {error_msg}")
@@ -436,5 +500,61 @@ def handle_message(event):
             print("【DEBUG】: 訊息已成功發送")
     else:
         print("【DEBUG】: reply_text 為空，未執行發送")
+
+@handler.add(MessageEvent, message=ImageMessageContent)
+def handle_image_message(event):
+    user_id = event.source.user_id
+    message_id = event.message.id
+
+    try:
+        # 從 LINE 下載圖片
+        with ApiClient(configuration) as api_client:
+            blob_api = MessagingApiBlob(api_client)
+            image_bytes = blob_api.get_message_content(message_id)
+
+        prompt = """
+        你是一位專業營養師，請分析這張食物照片。
+        請嚴格回傳以下 JSON 格式，不要包含 ```json 或任何額外說明：
+        {
+            "food_summary": "食物名稱與描述",
+            "total_calories": 數字（估算總熱量kcal，整數）,
+            "advice": "一句營養建議"
+        }
+        若圖片中沒有食物，請回傳：{"food_summary": "無", "total_calories": 0, "advice": "請拍攝食物照片"}
+        """
+
+        response = ai_client.models.generate_content(
+            model='gemini-2.0-flash',
+            contents=[
+                types.Part.from_bytes(data=image_bytes, mime_type='image/jpeg'),
+                types.Part.from_text(prompt)
+            ]
+        )
+
+        raw = response.text.replace('```json', '').replace('```', '').strip()
+        start, end = raw.find('{'), raw.rfind('}') + 1
+        data = json.loads(raw[start:end])
+
+        cal = int(data.get('total_calories', 0))
+        food_name = data.get('food_summary', '無')
+
+        if cal > 0:
+            add_food_log(user_id, food_name, cal)
+            today_total = get_today_total_calories(user_id)
+            reply_text = (
+                f"📸 辨識結果：{food_name}\n\n"
+                f"🔥 本次熱量：{cal} kcal\n"
+                f"📊 今日累計攝取：{today_total} kcal\n\n"
+                f"💡 營養師小叮嚀：{data.get('advice', '維持健康飲食！')}"
+            )
+        else:
+            reply_text = f"📸 {data.get('advice', '圖片中未偵測到食物，請重新拍攝！')}"
+
+    except Exception as e:
+        print(f"【DEBUG】: 圖片辨識錯誤: {e}")
+        reply_text = "📸 圖片辨識失敗，請稍後再試或改用文字輸入食物名稱。"
+
+    send_reply(event.reply_token, reply_text)
+
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000)
