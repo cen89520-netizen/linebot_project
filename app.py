@@ -113,17 +113,19 @@ def send_flex_reply(reply_token, alt_text, bubble_dict):
             messages=[FlexMessage(alt_text=alt_text, contents=FlexContainer.from_dict(bubble_dict))]
         ))
 
-def build_log_bubble(food_summary, cal, ex_summary, ex_cal, today_total, food_str, ex_str, advice):
+def build_log_bubble(food_summary, cal, ex_summary, ex_cal, today_total, food_str, ex_str, advice, food_breakdown=''):
     body = []
     if cal > 0:
         body += [
             {"type": "text", "text": "🍽️ 飲食", "weight": "bold", "color": "#4A90D9", "size": "sm"},
             {"type": "text", "text": food_summary, "wrap": True, "size": "md", "margin": "xs"},
-            {"type": "box", "layout": "horizontal", "margin": "xs", "contents": [
-                {"type": "text", "text": "攝取熱量", "size": "xs", "color": "#888888", "flex": 1},
-                {"type": "text", "text": f"{cal} kcal", "size": "xs", "color": "#4A90D9", "weight": "bold", "align": "end", "flex": 1}
-            ]}
         ]
+        if food_breakdown and food_breakdown != '無':
+            body.append({"type": "text", "text": food_breakdown, "wrap": True, "size": "xs", "color": "#999999", "margin": "xs"})
+        body.append({"type": "box", "layout": "horizontal", "margin": "xs", "contents": [
+            {"type": "text", "text": "攝取熱量", "size": "xs", "color": "#888888", "flex": 1},
+            {"type": "text", "text": f"{cal} kcal", "size": "xs", "color": "#4A90D9", "weight": "bold", "align": "end", "flex": 1}
+        ]})
     if ex_cal > 0 and ex_summary != '無':
         if cal > 0:
             body.append({"type": "separator", "margin": "md"})
@@ -507,16 +509,36 @@ def handle_message(event):
 
     # 2. 如果不是上面的指令，就交給 AI 處理飲食/運動分析
     else:
-        # 你的 Prompt 設定保持不變
+        user_data = get_user_data(user_id)
+        user_context = ""
+        ref_weight = 60
+        if user_data:
+            h, w, age, gender, phase, goal_calories, _, _ = user_data
+            if w: ref_weight = w
+            parts = []
+            if w: parts.append(f"體重{w}kg")
+            if phase: parts.append(f"目標：{phase}")
+            if parts:
+                user_context = f"\n【使用者資料】{'、'.join(parts)}，請依此調整建議與運動消耗估算。"
+
         prompt = f"""
-        你是一位營養與健身教練。請分析使用者的輸入，同時提取「飲食」與「運動」。
+        你是一位專業的台灣營養師，請精確分析使用者輸入中的飲食與運動。
+
+        【熱量計算原則】
+        1. 依台灣常見份量估算：一碗白飯≈280kcal、便當≈700kcal、雞腿≈250kcal、雞胸肉100g≈165kcal
+        2. 烹調方式影響：油炸＞煎＞炒＞烤＞水煮，油炸比水煮多40~60%熱量
+        3. 注意隱藏熱量：炒菜用油（每匙≈45kcal）、醬料、勾芡、全糖飲料（珍奶≈670kcal）
+        4. 使用者有標示份量或大卡數時，以該數字為準
+        5. 運動消耗依{ref_weight}kg體重與時長估算（跑步每分鐘約{round(ref_weight*0.13)}kcal、快走約{round(ref_weight*0.07)}kcal）{user_context}
+
         請嚴格回傳以下 JSON 格式，不要包含 ```json 或任何額外說明：
         {{
-            "food_summary": "飲食內容摘要，若無則填無",
+            "food_summary": "飲食內容摘要（含份量），若無則填無",
+            "food_breakdown": "各品項熱量，例：雞腿250kcal、白飯280kcal，若無飲食則填無",
             "total_calories": 數字,
             "exercise_summary": "運動內容摘要，若無則填無",
             "exercise_calories": 數字,
-            "advice": "建議"
+            "advice": "針對使用者目標的具體建議，20字以內"
         }}
         使用者輸入: {user_message}
         """
@@ -555,7 +577,8 @@ def handle_message(event):
             send_flex_reply(event.reply_token, "記錄成功",
                             build_log_bubble(food_summary, cal, ex_summary, ex_cal,
                                              today_total, food_str, ex_str,
-                                             data.get('advice', '維持健康生活！')))
+                                             data.get('advice', '維持健康生活！'),
+                                             data.get('food_breakdown', '')))
             return
         except Exception as e:
             error_msg = str(e)
