@@ -785,7 +785,7 @@ def handle_image_message(event):
         """
 
         response = ai_client.models.generate_content(
-            model='gemini-1.5-flash',
+            model='models/gemini-3.5-flash',
             contents=[img, prompt]
         )
 
