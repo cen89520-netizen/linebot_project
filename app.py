@@ -6,7 +6,7 @@ from datetime import datetime
 from flask import Flask, request, abort, send_from_directory
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
-from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, MessagingApiBlob, ReplyMessageRequest, TextMessage, ImageMessage
+from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, MessagingApiBlob, ReplyMessageRequest, TextMessage, ImageMessage, FlexMessage, FlexContainer
 from linebot.v3.webhooks import MessageEvent, TextMessageContent, ImageMessageContent
 from google import genai
 from google.genai import types
@@ -105,6 +105,107 @@ def send_reply(reply_token, text):
             messages=[TextMessage(text=text)]
         ))
         print("【DEBUG】: 斷食訊息已成功發送")
+
+def send_flex_reply(reply_token, alt_text, bubble_dict):
+    with ApiClient(configuration) as api_client:
+        MessagingApi(api_client).reply_message(ReplyMessageRequest(
+            reply_token=reply_token,
+            messages=[FlexMessage(alt_text=alt_text, contents=FlexContainer.from_dict(bubble_dict))]
+        ))
+
+def build_log_bubble(food_summary, cal, ex_summary, ex_cal, today_total, food_str, ex_str, advice):
+    body = []
+    if cal > 0:
+        body += [
+            {"type": "text", "text": "🍽️ 飲食", "weight": "bold", "color": "#4A90D9", "size": "sm"},
+            {"type": "text", "text": food_summary, "wrap": True, "size": "md", "margin": "xs"},
+            {"type": "box", "layout": "horizontal", "margin": "xs", "contents": [
+                {"type": "text", "text": "攝取熱量", "size": "xs", "color": "#888888", "flex": 1},
+                {"type": "text", "text": f"{cal} kcal", "size": "xs", "color": "#4A90D9", "weight": "bold", "align": "end", "flex": 1}
+            ]}
+        ]
+    if ex_cal > 0 and ex_summary != '無':
+        if cal > 0:
+            body.append({"type": "separator", "margin": "md"})
+        body += [
+            {"type": "text", "text": "🏃 運動", "weight": "bold", "color": "#27AE60", "size": "sm", "margin": "md"},
+            {"type": "text", "text": ex_summary, "wrap": True, "size": "md", "margin": "xs"},
+            {"type": "box", "layout": "horizontal", "margin": "xs", "contents": [
+                {"type": "text", "text": "消耗熱量", "size": "xs", "color": "#888888", "flex": 1},
+                {"type": "text", "text": f"{ex_cal} kcal", "size": "xs", "color": "#27AE60", "weight": "bold", "align": "end", "flex": 1}
+            ]}
+        ]
+    body += [
+        {"type": "separator", "margin": "lg"},
+        {"type": "box", "layout": "horizontal", "margin": "md", "contents": [
+            {"type": "text", "text": "今日累計攝取", "size": "sm", "color": "#555555", "flex": 1},
+            {"type": "text", "text": f"{today_total} kcal", "size": "sm", "weight": "bold", "color": "#333333", "align": "end", "flex": 1}
+        ]},
+        {"type": "text", "text": f"📝 {food_str}", "size": "xs", "color": "#aaaaaa", "wrap": True, "margin": "xs"},
+        {"type": "text", "text": f"🏋️ {ex_str}", "size": "xs", "color": "#aaaaaa", "wrap": True, "margin": "xs"},
+    ]
+    return {
+        "type": "bubble",
+        "header": {"type": "box", "layout": "vertical", "backgroundColor": "#4A90D9", "paddingAll": "15px",
+                   "contents": [{"type": "text", "text": "✅ 記錄成功", "color": "#ffffff", "weight": "bold", "size": "lg"}]},
+        "body": {"type": "box", "layout": "vertical", "paddingAll": "15px", "contents": body},
+        "footer": {"type": "box", "layout": "vertical", "backgroundColor": "#f8f9fa", "paddingAll": "12px",
+                   "contents": [{"type": "text", "text": f"💡 {advice}", "wrap": True, "color": "#888888", "size": "xs"}]}
+    }
+
+def build_today_bubble(food_str, today_total, ex_str):
+    return {
+        "type": "bubble",
+        "header": {"type": "box", "layout": "vertical", "backgroundColor": "#27AE60", "paddingAll": "15px",
+                   "contents": [{"type": "text", "text": "📋 今日紀錄", "color": "#ffffff", "weight": "bold", "size": "lg"}]},
+        "body": {"type": "box", "layout": "vertical", "paddingAll": "15px", "contents": [
+            {"type": "box", "layout": "horizontal", "contents": [
+                {"type": "text", "text": "今日累計熱量", "size": "sm", "color": "#555555", "flex": 1},
+                {"type": "text", "text": f"{today_total} kcal", "size": "sm", "weight": "bold", "color": "#27AE60", "align": "end", "flex": 1}
+            ]},
+            {"type": "separator", "margin": "lg"},
+            {"type": "text", "text": "🥗 今日飲食", "weight": "bold", "size": "sm", "margin": "lg", "color": "#333333"},
+            {"type": "text", "text": food_str, "size": "sm", "color": "#666666", "wrap": True, "margin": "xs"},
+            {"type": "separator", "margin": "lg"},
+            {"type": "text", "text": "🏋️ 今日運動", "weight": "bold", "size": "sm", "margin": "lg", "color": "#333333"},
+            {"type": "text", "text": ex_str, "size": "sm", "color": "#666666", "wrap": True, "margin": "xs"},
+        ]}
+    }
+
+def build_report_bubble(gender, age, bmi, phase, final_goal, source):
+    if bmi < 18.5:
+        bmi_label, bmi_color = "偏輕", "#3498DB"
+    elif bmi < 24:
+        bmi_label, bmi_color = "正常", "#27AE60"
+    elif bmi < 27:
+        bmi_label, bmi_color = "過重", "#E67E22"
+    else:
+        bmi_label, bmi_color = "肥胖", "#E74C3C"
+    icon = "👨" if gender == "男" else "👩"
+    return {
+        "type": "bubble",
+        "header": {"type": "box", "layout": "vertical", "backgroundColor": "#8E44AD", "paddingAll": "15px",
+                   "contents": [{"type": "text", "text": "📊 健康報表", "color": "#ffffff", "weight": "bold", "size": "lg"}]},
+        "body": {"type": "box", "layout": "vertical", "paddingAll": "15px", "contents": [
+            {"type": "box", "layout": "horizontal", "contents": [
+                {"type": "text", "text": f"{icon} {gender}", "size": "sm", "color": "#555555", "flex": 1},
+                {"type": "text", "text": f"{age} 歲", "size": "sm", "color": "#555555", "align": "center", "flex": 1},
+                {"type": "text", "text": phase, "size": "sm", "color": "#8E44AD", "weight": "bold", "align": "end", "flex": 1}
+            ]},
+            {"type": "separator", "margin": "lg"},
+            {"type": "box", "layout": "horizontal", "margin": "lg", "contents": [
+                {"type": "text", "text": "BMI", "size": "sm", "color": "#555555", "flex": 1},
+                {"type": "text", "text": f"{bmi:.1f}", "size": "xl", "weight": "bold", "color": bmi_color, "align": "end", "flex": 1},
+                {"type": "text", "text": bmi_label, "size": "sm", "color": bmi_color, "align": "end", "flex": 1}
+            ]},
+            {"type": "separator", "margin": "lg"},
+            {"type": "text", "text": "每日目標熱量", "size": "sm", "color": "#555555", "margin": "lg"},
+            {"type": "box", "layout": "horizontal", "margin": "xs", "contents": [
+                {"type": "text", "text": source, "size": "xs", "color": "#aaaaaa", "flex": 2, "wrap": True},
+                {"type": "text", "text": f"{final_goal:.0f} kcal", "size": "lg", "weight": "bold", "color": "#8E44AD", "align": "end", "flex": 1}
+            ]}
+        ]}
+    }
 
 def generate_weight_chart(user_id):
     history = get_weight_history(user_id)
@@ -244,36 +345,27 @@ def handle_message(event):
             return
 
     if "今日紀錄" in user_message:
-        # --- 修正開始 ---
         from db_manager import get_db_connection
         conn = get_db_connection()
         cursor = conn.cursor()
-        # PostgreSQL 使用 CURRENT_DATE
         cursor.execute("SELECT food_name FROM food_logs WHERE user_id = %s AND date::date = CURRENT_DATE", (user_id,))
         food_list = [row[0] for row in cursor.fetchall()]
+        cursor.execute("SELECT exercise_name FROM exercise_logs WHERE user_id = %s AND date::date = CURRENT_DATE", (user_id,))
+        ex_list = [row[0] for row in cursor.fetchall()]
         cursor.close()
         conn.close()
-        # --- 修正結束 ---
-        
-        food_str = "、".join(food_list) if food_list else "尚未記錄任何食物"
+
+        food_str = "、".join(food_list) if food_list else "尚未記錄"
+        ex_str = "、".join(ex_list) if ex_list else "尚未記錄"
         today_total = get_today_total_calories(user_id)
-        
-        reply_text = (
-            f"🥗 請告訴我你吃了什麼或做了什麼運動！\n"
-            f"------------------\n"
-            f"📝 今日已紀錄：{food_str}\n"
-            f"📊 今日累計熱量：{today_total} kcal"
-        )
+
+        send_flex_reply(event.reply_token, "今日紀錄", build_today_bubble(food_str, today_total, ex_str))
+        return
     elif "我的報表" in user_message:
         data = get_user_data(user_id)
         if data:
             h, w, age, gender, phase, goal_calories, start_time, is_fasting = data
-            
-            # 給予預設值，防止變數未定義
-            final_goal = 0
             source = "🤖 系統自動建議值"
-            
-            # 判斷目標熱量
             if goal_calories and goal_calories > 0:
                 final_goal = goal_calories
                 source = "🎯 您設定的每日目標"
@@ -281,18 +373,13 @@ def handle_message(event):
                 bmr = calculate_bmr(h, w, age or 25, gender or '女')
                 phase_adj = {'減脂期': -300, '增肌期': 300, '維持期': 0}
                 final_goal = (bmr * 1.2) + phase_adj.get(phase or '維持期', 0)
-            
             bmi = w / ((h / 100) ** 2)
-            
-            reply_text = (
-                f"📊 健康報表 ({phase or '維持期'})\n"
-                f"👤 {gender or '女'} | {age or 25} 歲\n"
-                f"📏 BMI: {bmi:.1f}\n"
-                f"------------------\n"
-                f"{source}: {final_goal:.0f} kcal"
-            )
+            send_flex_reply(event.reply_token, "健康報表",
+                            build_report_bubble(gender or '女', age or 25, bmi, phase or '維持期', final_goal, source))
+            return
         else:
-            reply_text = "尚未設定資料，請先輸入資訊。"
+            send_reply(event.reply_token, "尚未設定資料，請先輸入資訊。")
+            return
 
     elif "營養知識" in user_message:
         reply_text = (
@@ -465,18 +552,11 @@ def handle_message(event):
             ex_str = "、".join(ex_list) if ex_list else "無"
             today_total = get_today_total_calories(user_id)
 
-            lines = ["收到！已幫您記錄 📋\n"]
-            if cal > 0:
-                lines.append(f"🍽️ 飲食：{food_summary}")
-                lines.append(f"🔥 本次攝取：{cal} kcal")
-            if ex_cal > 0 and ex_summary != '無':
-                lines.append(f"🏃 運動：{ex_summary}")
-                lines.append(f"💪 本次消耗：{ex_cal} kcal")
-            lines.append(f"\n📊 今日累計攝取：{today_total} kcal")
-            lines.append(f"📝 今日飲食：{food_str}")
-            lines.append(f"🏋️ 今日運動：{ex_str}")
-            lines.append(f"\n💡 {data.get('advice', '維持健康生活！')}")
-            reply_text = "\n".join(lines)
+            send_flex_reply(event.reply_token, "記錄成功",
+                            build_log_bubble(food_summary, cal, ex_summary, ex_cal,
+                                             today_total, food_str, ex_str,
+                                             data.get('advice', '維持健康生活！')))
+            return
         except Exception as e:
             error_msg = str(e)
             print(f"【DEBUG】: 錯誤詳細內容: {error_msg}")
