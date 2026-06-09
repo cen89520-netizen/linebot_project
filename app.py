@@ -771,7 +771,7 @@ def handle_image_message(event):
             # 相容 bytes 和 iterable chunks 兩種回傳格式
             image_bytes = raw if isinstance(raw, bytes) else b''.join(raw)
 
-        img = Image.open(io.BytesIO(image_bytes))
+        img = Image.open(io.BytesIO(image_bytes)).convert('RGB')
 
         prompt = """
         你是一位專業營養師，請分析這張食物照片。
@@ -785,7 +785,7 @@ def handle_image_message(event):
         """
 
         response = ai_client.models.generate_content(
-            model='models/gemini-3.5-flash',
+            model='gemini-1.5-flash',
             contents=[img, prompt]
         )
 
@@ -809,7 +809,7 @@ def handle_image_message(event):
             reply_text = f"📸 {data.get('advice', '圖片中未偵測到食物，請重新拍攝！')}"
 
     except Exception as e:
-        print(f"【DEBUG】: 圖片辨識錯誤: {e}")
+        print(f"【DEBUG】: 圖片辨識錯誤: {type(e).__name__}: {e}", flush=True)
         reply_text = "📸 圖片辨識失敗，請稍後再試或改用文字輸入食物名稱。"
 
     send_reply(event.reply_token, reply_text)
