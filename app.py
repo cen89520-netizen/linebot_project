@@ -809,8 +809,14 @@ def handle_image_message(event):
             reply_text = f"📸 {data.get('advice', '圖片中未偵測到食物，請重新拍攝！')}"
 
     except Exception as e:
+        error_msg = str(e)
         print(f"【DEBUG】: 圖片辨識錯誤: {type(e).__name__}: {e}", flush=True)
-        reply_text = "📸 圖片辨識失敗，請稍後再試或改用文字輸入食物名稱。"
+        if "503" in error_msg or "UNAVAILABLE" in error_msg:
+            reply_text = "📸 AI 現在有點忙，請稍候幾分鐘再傳一次照片！"
+        elif "429" in error_msg:
+            reply_text = "📸 今日辨識次數已達上限，請改用文字輸入食物名稱。"
+        else:
+            reply_text = "📸 圖片辨識失敗，請稍後再試或改用文字輸入食物名稱。"
 
     send_reply(event.reply_token, reply_text)
 
