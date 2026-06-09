@@ -10,6 +10,14 @@ from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, Messagi
 from linebot.v3.webhooks import MessageEvent, TextMessageContent, ImageMessageContent
 from google import genai
 from google.genai import types
+import io
+import cloudinary
+import cloudinary.uploader
+cloudinary.config(
+    cloud_name=os.getenv('CLOUDINARY_CLOUD_NAME'),
+    api_key=os.getenv('CLOUDINARY_API_KEY'),
+    api_secret=os.getenv('CLOUDINARY_API_SECRET')
+)
 from dotenv import load_dotenv
 from flask_apscheduler import APScheduler
 from linebot.v3.messaging import PushMessageRequest
@@ -355,12 +363,18 @@ def generate_weight_chart(user_id):
 
     plt.tight_layout()
 
-    if not os.path.exists('static'):
-        os.makedirs('static')
-    filename = f"static/chart_{user_id}.png"
-    plt.savefig(filename, dpi=150, bbox_inches='tight')
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
     plt.close()
-    return filename
+    buf.seek(0)
+
+    result = cloudinary.uploader.upload(
+        buf,
+        public_id=f"linebot_chart_{user_id}",
+        overwrite=True,
+        resource_type='image'
+    )
+    return result['secure_url']
 
 def handle_fasting_logic(user_message, user_id):
     """專門處理斷食相關指令，回傳字串結果，若不是斷食指令則回傳 None"""
@@ -523,15 +537,14 @@ def handle_message(event):
         return
 
     elif "體重趨勢" in user_message:
-        path = generate_weight_chart(user_id)
-        if path:
-            chart_url = f"{os.getenv('BASE_URL', '').rstrip('/')}/{path}"
+        chart_url = generate_weight_chart(user_id)
+        if chart_url:
             with ApiClient(configuration) as api_client:
                 MessagingApi(api_client).reply_message(ReplyMessageRequest(
                     reply_token=event.reply_token,
                     messages=[TextMessage(text="📈 這是您的體重變化趨勢："), ImageMessage(originalContentUrl=chart_url, previewImageUrl=chart_url)]
                 ))
-            return 
+            return
         reply_text = "📈 體重紀錄不足，請至少記錄 3 次體重後再查看趨勢圖喔！"
     elif "資料設定" == user_message:
         reply_text = (
