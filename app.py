@@ -47,7 +47,7 @@ def send_push_message(user_id, text):
 # 9:00 到 21:00 每小時提醒喝水
 # 1. 喝水廣播 (簡單、不吃資料庫資源)
 # 1. 喝水廣播 (修正版)
-@scheduler.task('cron', id='water_reminder', hour='1-13', minute=0)
+@scheduler.task('cron', id='water_reminder', hour='1,4,7,10,13', minute=0)
 def job_water():
     # 改用我們剛寫好的 PostgreSQL 連線方式
     from db_manager import get_db_connection
