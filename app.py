@@ -523,7 +523,7 @@ def handle_message(event):
         
         try:
             # 只執行一次，不使用迴圈
-            response = ai_client.models.generate_content(model='gemini-2.0-flash', contents=prompt)
+            response = ai_client.models.generate_content(model='models/gemini-3.5-flash', contents=prompt)
             raw = response.text.replace('```json', '').replace('```', '').strip()
             start, end = raw.find('{'), raw.rfind('}') + 1
             data = json.loads(raw[start:end])
@@ -604,7 +604,7 @@ def handle_image_message(event):
         """
 
         response = ai_client.models.generate_content(
-            model='gemini-2.0-flash',
+            model='models/gemini-3.5-flash',
             contents=[
                 types.Part.from_bytes(data=image_bytes, mime_type='image/jpeg'),
                 types.Part.from_text(prompt)
