@@ -489,12 +489,20 @@ def handle_message(event):
             return
 
     elif "營養知識" in user_message:
-        reply_text = (
-            "🥦 歡迎來到健康小學堂！請輸入以下指令查看詳細內容：\n\n"
-            "【查詢指令】\n"
-            "🔎 營養增肌\n🔎 營養減脂\n🔎 營養斷食\n🔎 營養外食\n🔎 營養運動"
-        )
-        send_reply(event.reply_token, reply_text)
+        with ApiClient(configuration) as api_client:
+            MessagingApi(api_client).reply_message(ReplyMessageRequest(
+                reply_token=event.reply_token,
+                messages=[TextMessage(
+                    text="🥦 健康小學堂！請選擇想了解的主題：",
+                    quick_reply=QuickReply(items=[
+                        QuickReplyItem(action=MessageAction(label="💪 增肌", text="營養增肌")),
+                        QuickReplyItem(action=MessageAction(label="🔥 減脂", text="營養減脂")),
+                        QuickReplyItem(action=MessageAction(label="⏳ 斷食", text="營養斷食")),
+                        QuickReplyItem(action=MessageAction(label="🍱 外食", text="營養外食")),
+                        QuickReplyItem(action=MessageAction(label="🏃 運動", text="營養運動")),
+                    ])
+                )]
+            ))
         return
 
     elif "營養" in user_message and "增肌" in user_message:
